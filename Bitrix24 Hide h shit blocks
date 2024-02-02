@@ -1,0 +1,119 @@
+// ==UserScript==
+// @name         Hide CRM Blocks on Bitrix24
+// @namespace    http://tampermonkey.net/
+// @version      4.1
+// @description  Hide CRM blocks with specified class on Bitrix24 pages and add buttons to toggle spoilers
+// @author       You
+// @match        https://meldana.bitrix24.ru/crm/deal/details/**
+// @grant        GM_addStyle
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+
+
+    function hideBlocks() {
+        // Указываем классы блоков, которые нужно скрыть
+        var blockClasses = ['crm-entity-stream-section-history', 'crm-timeline__card-wrapper'];
+
+        // Указываем исключения (названия блоков), которые не нужно скрывать
+        var exceptions = ['комментарий', 'обработан входящий звонок', 'завершён исходящий звонок','входящее письмо'];
+
+        // Проходим по всем указанным классам блоков
+        blockClasses.forEach(function(blockClass) {
+            // Находим все элементы с текущим классом, которые не являются дочерними элементами спойлера
+            var blocks = document.querySelectorAll('.' + blockClass + ':not([data-spoiler-child="true"]):not(.spoiler-processed)');
+
+            // Проходим по всем найденным блокам
+            blocks.forEach(function(block) {
+                // Получаем title из элемента с классом "crm-timeline__card-title"
+                var titleElement = block.querySelector('.crm-timeline__card-title');
+                var titleText = titleElement ? titleElement.getAttribute('title') : '';
+
+                // Проверяем, содержит ли title исключение (без учета регистра)
+                var isException = exceptions.some(function(exception) {
+                    return titleText.toLowerCase().includes(exception.toLowerCase());
+                });
+
+                // Проверяем, содержит ли блок строгое соответствие слову "задача" (без учета регистра) в любом месте текста блока
+                var containsExactTask = /\bзадача\b/i.test(block.innerText);
+
+                // Если блок не является исключением и не содержит строгое соответствие слову "задача",
+                // и title не равен "задача", то создаем спойлер
+                if (!isException && !(containsExactTask || titleText.toLowerCase() === 'задача')) {
+                    var spoiler = document.createElement('details');
+                    spoiler.style.marginBottom = '10px';
+
+                    // Создаем подпись для спойлера
+                    var summary = document.createElement('summary');
+                    summary.innerText = titleText || 'Без заголовка';
+
+                    // Добавляем подпись к спойлеру
+                    spoiler.appendChild(summary);
+
+                    // Перемещаем блок под спойлер
+                    var clonedBlock = block.cloneNode(true);
+                    spoiler.appendChild(clonedBlock);
+
+                    // Заменяем оригинальный блок спойлером
+                    block.replaceWith(spoiler);
+
+                    // Добавляем класс, чтобы пометить, что блок уже был обработан
+                    spoiler.classList.add('spoiler-processed');
+
+                    // Устанавливаем атрибут, чтобы пометить блок как дочерний элемент спойлера
+                    clonedBlock.setAttribute('data-spoiler-child', 'true');
+                }
+            });
+        });
+    }
+
+    function toggleAllSpoilers() {
+        // Переключаем состояние спойлеров
+        var spoilers = document.querySelectorAll('details');
+        spoilers.forEach(function(spoiler) {
+            spoiler.open = !spoiler.open;
+        });
+    }
+
+    function applyOnScroll() {
+        hideBlocks();
+
+        // Проверяем, достигли ли конца страницы
+        if (window.innerHeight + window.scrollY >= document.body.offsetHeight) {
+            hideBlocks();
+        }
+    }
+
+    // Функция для обработки события toggle спойлера
+    function handleSpoilerToggle(event) {
+        if (event.target.tagName === 'DETAILS') {
+            var contentBlock = event.target.querySelector('.hidden-block');
+
+            // Добавляем класс, чтобы пометить, что блок уже был обработан
+            if (contentBlock) {
+                contentBlock.classList.add('spoiler-processed');
+            }
+        }
+    }
+
+    // Вызываем hideBlocks после полной загрузки страницы и при прокрутке
+    window.addEventListener('load', function() {
+        hideBlocks();
+
+        // Применяем скрипт при прокрутке страницы
+        window.addEventListener('scroll', applyOnScroll);
+
+        // Обрабатываем событие toggle для спойлеров
+        document.addEventListener('toggle', handleSpoilerToggle);
+
+        // Добавляем кнопку "Скрыть все/Показать все спойлеры" после класса "crm-entity-stream-section-live-im"
+        var buttonContainer = document.querySelector('.crm-entity-stream-section-live-im');
+
+        var toggleAllButton = document.createElement('button');
+        toggleAllButton.innerText = 'Скрыть все/Показать все спойлеры';
+        toggleAllButton.addEventListener('click', toggleAllSpoilers);
+        buttonContainer.appendChild(toggleAllButton);
+    });
+})();
